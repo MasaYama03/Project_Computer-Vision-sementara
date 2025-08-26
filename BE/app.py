@@ -1834,17 +1834,23 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"❌ Database error: {str(e)}")
     
+    # Get port from environment variable or use default 5000
+    port = int(os.environ.get('PORT', 5000))
+    
     print("Starting DrowsyGuard Backend Server...")
     print(f"Database URL: {app.config.get('DATABASE_URL')}")
     print(f"Model Path: {app.config.get('MODEL_PATH')}")
     print(f"Alarm Sounds: {app.config.get('ALARM_SOUNDS_FOLDER')}")
-    print("Server running on http://localhost:5000")
+    print(f"Server will run on port: {port}")
     
     # Debug: Print all registered routes
     print("\n=== REGISTERED ROUTES ===")
     for rule in app.url_map.iter_rules():
         print(f"{rule.methods} {rule.rule} -> {rule.endpoint}")
     print("========================\n")
+    
+    # Run the app
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # Add request logging middleware
 @app.before_request

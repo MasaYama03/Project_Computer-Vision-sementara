@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(120) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(100),
+    phone VARCHAR(20),
+    date_of_birth TIMESTAMP,
     profile_photo VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -53,7 +55,7 @@ CREATE TABLE IF NOT EXISTS detection_sessions (
     yawn_count INTEGER DEFAULT 0,
     awake_count INTEGER DEFAULT 0,
     alarm_triggered BOOLEAN DEFAULT FALSE,
-    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'completed', 'stopped')),
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'completed', 'stopped', 'interrupted')),
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
