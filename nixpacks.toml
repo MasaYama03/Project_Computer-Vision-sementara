@@ -1,4 +1,4 @@
 # nixpacks.toml
 
 [phases.setup]
-nixPkgs = ["pkgs.python311", "pkgs.mesa", "pkgs.glib"]
+nixPkgs = ["pkgs.python311", "pkgs.glib", "pkgs.libGL", "pkgs.libX11", "pkgs.libXext", "pkgs.libSM", "pkgs.libXrender"]
