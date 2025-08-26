@@ -1834,8 +1834,8 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"❌ Database error: {str(e)}")
     
-    # Get port from environment variable or use default 5000
-    port = int(os.environ.get('PORT', 5000))
+    # Gunakan port 5000 secara default
+    port = int(os.environ.get('PORT', '5000'))
     
     print("Starting DrowsyGuard Backend Server...")
     print(f"Database URL: {app.config.get('DATABASE_URL')}")
