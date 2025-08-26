@@ -1868,6 +1868,6 @@ def log_response(response):
     print(f"[RESPONSE] {response.status_code} for {request.method} {request.path}")
     return response
 
-if __name__ == '__main__':
-    # Run without debug mode to prevent reloader issues with YOLO model
-    app.run(debug=False, use_reloader=False)
+# if __name__ == '__main__':
+#     # Run without debug mode to prevent reloader issues with YOLO model
+#     app.run(debug=False, use_reloader=False)
