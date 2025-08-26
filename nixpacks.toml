@@ -1,4 +1,4 @@
 # nixpacks.toml
 
 [phases.setup]
-nixPkgs = ["pkgs.libgl", "pkgs.glib"]
+nixPkgs = ["pkgs.mesa", "pkgs.glib"]
