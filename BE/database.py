@@ -10,12 +10,62 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import uuid
 
 # Database configuration
-DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:123@localhost:5432/drowsys_db')
+def get_database_url():
+    # Check if running in Heroku
+    if 'DATABASE_URL' in os.environ:
+        # Handle Heroku's postgres:// URL format
+        db_url = os.environ['DATABASE_URL']
+        if db_url.startswith('postgres://'):
+            db_url = db_url.replace('postgres://', 'postgresql://', 1)
+        return db_url
+    # Default local development database
+    return os.environ.get('DATABASE_URL', 'sqlite:///drowsyguard.db')
 
 # Create engine and session
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+try:
+    DATABASE_URL = get_database_url()
+    print(f"🔧 Connecting to database at: {DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else DATABASE_URL}")
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base = declarative_base()
+    db = SessionLocal()
+    db.execute('SELECT 1')  # Test connection
+    print("✅ Database connection successful!")
+    db.close()
+except Exception as e:
+    print(f"❌ Database connection failed: {str(e)}")
+    raise
+
+def init_db():
+    """Initialize the database and create tables"""
+    Base.metadata.create_all(bind=engine)
+    print(f"✅ Database tables created successfully at {DATABASE_URL}")
+    
+    # Create a default admin user if not exists
+    db = SessionLocal()
+    try:
+        from werkzeug.security import generate_password_hash
+        from datetime import datetime, timedelta
+        
+        # Check if admin user exists
+        admin = db.query(User).filter(User.username == 'admin').first()
+        if not admin:
+            admin = User(
+                username='admin',
+                email='admin@example.com',
+                password_hash=generate_password_hash('admin123'),
+                role='admin',
+                email_verified=True,
+                last_login=datetime.utcnow()
+            )
+            db.add(admin)
+            db.commit()
+            print("✅ Created default admin user (username: admin, password: admin123)")
+    except Exception as e:
+        print(f"❌ Error initializing database: {str(e)}")
+        db.rollback()
+    finally:
+        db.close()
 
 # Database Models
 

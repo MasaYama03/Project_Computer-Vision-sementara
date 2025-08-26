@@ -40,14 +40,126 @@ pi - 2/
 └── README.md              # This file
 ```
 
-## Setup Instructions
+## 🚀 Deployment Guide
 
 ### Prerequisites
 
 - Python 3.8+
-- PostgreSQL 12+
-- Node.js (for serving frontend)
+- PostgreSQL 12+ (or cloud database)
+- Node.js 16+ (for frontend build)
 - Webcam (for live detection)
+- Git
+
+### Environment Variables
+
+Create a `.env` file in the root directory with the following variables:
+
+```bash
+# Database
+DATABASE_URL=postgresql://username:password@localhost:5432/drowsiness_db
+
+# Flask
+FLASK_ENV=production
+SECRET_KEY=your-secret-key-here
+JWT_SECRET_KEY=your-jwt-secret-key-here
+
+# Model Paths
+MODEL_PATH=./model/best.pt
+UPLOAD_FOLDER=./uploads
+PROCESSED_FOLDER=./processed
+
+# App Settings
+DEFAULT_CONFIDENCE_THRESHOLD=0.7
+DEFAULT_TRIGGER_TIME=5
+DEFAULT_ALARM_VOLUME=0.8
+
+# CORS (adjust for your frontend URL)
+FRONTEND_URL=http://localhost:3000
+```
+
+### Backend Deployment
+
+1. **Install Dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Database Setup**
+   ```bash
+   # Create database and user
+   createdb drowsiness_db
+   createuser -P drowsy_user
+   
+   # Run migrations (if any)
+   # Add your migration commands here
+   ```
+
+3. **Run Migrations**
+   ```bash
+   flask db upgrade
+   ```
+
+4. **Run with Gunicorn**
+   ```bash
+   gunicorn --bind 0.0.0.0:5000 wsgi:application
+   ```
+
+### Frontend Deployment
+
+1. **Install Dependencies**
+   ```bash
+   cd FE
+   npm install
+   ```
+
+2. **Build for Production**
+   ```bash
+   npm run build
+   ```
+
+3. **Serve Static Files**
+   Configure your web server (Nginx/Apache) to serve the `FE/dist` directory
+
+### Docker Deployment
+
+1. **Build the Image**
+   ```bash
+   docker build -t drowsyguard .
+   ```
+
+2. **Run the Container**
+   ```bash
+   docker run -d \
+     --name drowsyguard \
+     -p 5000:5000 \
+     --env-file .env \
+     -v $(pwd)/uploads:/app/uploads \
+     -v $(pwd)/processed:/app/processed \
+     drowsyguard
+   ```
+
+### Health Check Endpoints
+
+- `GET /` - API information and available endpoints
+- `GET /health` - Health check endpoint
+- `GET /api/model/health` - Model health status
+
+### Troubleshooting
+
+1. **502 Bad Gateway**
+   - Check if Gunicorn is running
+   - Verify database connection
+   - Check application logs
+
+2. **Model Not Loading**
+   - Verify model file exists at `./model/best.pt`
+   - Check file permissions
+   - Ensure required Python packages are installed
+
+3. **Database Connection Issues**
+   - Verify database is running
+   - Check connection string in `.env`
+   - Ensure database user has proper permissions
 
 ### 1. Database Setup
 

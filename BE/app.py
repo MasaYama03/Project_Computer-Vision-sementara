@@ -21,25 +21,118 @@ import traceback
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import database models
-from database import *
+# Import database models and SQLAlchemy
+from database import db, Base, engine, init_db
 from sqlalchemy import func
 
-# Initialize Flask app
-app = Flask(__name__)
+def create_app():
+    # Initialize Flask app
+    app = Flask(__name__)
+    
+    # Load configuration from environment variables
+    app.config.update(
+        SECRET_KEY=os.environ.get('SECRET_KEY', 'dev-key-123'),
+        JWT_SECRET_KEY=os.environ.get('JWT_SECRET_KEY', 'jwt-secret-key-123'),
+        JWT_ACCESS_TOKEN_EXPIRES=timedelta(hours=1),
+        JWT_TOKEN_LOCATION=['headers', 'cookies', 'json', 'query_string'],
+        JWT_HEADER_NAME='Authorization',
+        JWT_HEADER_TYPE='Bearer',
+        UPLOAD_FOLDER=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads'),
+        MAX_CONTENT_LENGTH=100 * 1024 * 1024,  # 100MB max file size
+        SQLALCHEMY_DATABASE_URI=os.environ.get('DATABASE_URL', 'sqlite:///drowsyguard.db'),
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        MODEL_PATH=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'model', 'best.pt'),
+        ALARM_SOUNDS_FOLDER=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'uploads', 'sounds')
+    )
+    
+    # Initialize CORS
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": ["http://localhost:3000", "http://localhost:8080"],
+            "supports_credentials": True,
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"]
+        }
+    })
+    
+    # Initialize JWT
+    jwt = JWTManager(app)
+    
+    # Initialize SQLAlchemy
+    db.init_app(app)
+    
+    # Initialize database
+    with app.app_context():
+        try:
+            print("🔧 Initializing database...")
+            # Check if tables already exist
+            from database import Base, engine, SessionLocal
+            inspector = Base.metadata.inspect(engine)
+            if not inspector.get_table_names():
+                print("🔄 Creating database tables...")
+                Base.metadata.create_all(bind=engine)
+                print("✅ Database tables created")
+            
+            # Initialize default data
+            from database import init_db
+            init_db()
+            print("✅ Database initialized successfully")
+            
+        except Exception as e:
+            print(f"❌ Database initialization error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            # Don't raise here to allow the app to start even if DB init fails
+            # The actual database operations will fail with meaningful errors
+    
+    # Add request logging middleware
+    @app.before_request
+    def log_request():
+        print(f"[REQUEST] {request.method} {request.path} from {request.remote_addr}")
+        if request.headers.get('Authorization'):
+            auth_header = request.headers.get('Authorization')
+            print(f"[REQUEST] Auth header: {auth_header[:50]}...")
+    
+    # Root endpoint
+    @app.route('/')
+    def root():
+        """Root endpoint with API information"""
+        return jsonify({
+            'name': 'DrowsyGuard API',
+            'version': '1.0.0',
+            'status': 'running',
+            'environment': 'production' if 'DYNO' in os.environ else 'development',
+            'documentation': 'https://github.com/yourusername/drowsyguard-api',
+            'endpoints': {
+                'health': '/health',
+                'api_docs': '/api/docs',
+                'auth': '/api/auth/*',
+                'detection': '/api/detection/*',
+                'settings': '/api/settings/*',
+                'dashboard': '/api/dashboard/*'
+            }
+        }), 200
+    
+    # Health check endpoint
+    @app.route('/health')
+    def health_check():
+        """Health check endpoint"""
+        return jsonify({
+            'status': 'healthy',
+            'environment': 'production' if 'DYNO' in os.environ else 'development',
+            'timestamp': datetime.utcnow().isoformat(),
+            'database_connected': True,
+            'model_loaded': os.path.exists(app.config.get('MODEL_PATH', ''))
+        }), 200
+    
+    # Import and register blueprints/routes here
+    from . import routes
+    
+    return app
 
-# Configuration
-app.config['SECRET_KEY'] = 'your-secret-key-here'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:123@localhost:5432/drowsys_db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['JWT_SECRET_KEY'] = 'jwt-secret-string'
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
-app.config['JWT_TOKEN_LOCATION'] = ['headers', 'cookies', 'json', 'query_string']
-app.config['JWT_HEADER_NAME'] = 'Authorization'
-app.config['JWT_HEADER_TYPE'] = 'Bearer'
+# Create the app instance
+app = create_app()
 
-# Initialize JWT
-jwt = JWTManager(app)
 
 # Configure CORS with specific settings
 CORS(app, 
@@ -81,40 +174,44 @@ camera = None
 
 # Model path
 MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'model', 'best.pt')
+app.config['MODEL_PATH'] = MODEL_PATH  # Make model path available in app config
 
-# Load YOLO model
-try:
-    # Try loading with explicit task specification to avoid compatibility issues
-    model = YOLO(MODEL_PATH, task='detect')
-    print("Model loaded successfully")
-    print(f"Model classes: {model.names}")
-except Exception as e:
-    print(f"Error loading model: {e}")
-    print("Attempting fallback model loading...")
+print(f"\n🔍 Attempting to load model from: {MODEL_PATH}")
+
+if not os.path.exists(MODEL_PATH):
+    print(f"❌ Error: Model file not found at {MODEL_PATH}")
+    print("   Detection features will not work without the model file!")
+else:
+    print(f"✅ Found model file at {MODEL_PATH}")
+    print("   Loading model... (this may take a moment)")
+    
     try:
-        # Fallback: try loading with older ultralytics version compatibility
-        from ultralytics import YOLO
-        import torch
+        # Try loading with explicit task specification (newer versions)
+        model = YOLO(MODEL_PATH, task='detect')
+        print("✅ Model loaded successfully with explicit task='detect'")
+        print(f"   Model classes: {model.names if hasattr(model, 'names') else 'Not available'}")
         
-        # Check if it's a custom trained model that needs specific handling
-        if MODEL_PATH.endswith('.pt'):
-            # Try direct torch loading first
-            try:
-                model = torch.load(MODEL_PATH, map_location='cpu')
-                print("Model loaded with torch.load")
-            except:
-                # Try YOLO with force_reload
-                model = YOLO(MODEL_PATH)
-                print("Model loaded with YOLO fallback")
-                print(f"Model classes: {model.names}")
-        else:
+    except Exception as e:
+        print(f"⚠️  Primary model loading failed: {str(e)}")
+        print("   Attempting fallback loading method...")
+        
+        try:
+            # Fallback: Try basic loading without task specification
             model = YOLO(MODEL_PATH)
-            print("Model loaded with fallback method")
-            print(f"Model classes: {model.names}")
-    except Exception as e2:
-        print(f"Fallback model loading also failed: {e2}")
-        print("Server will continue without model - detection features disabled")
-        model = None
+            print("✅ Model loaded successfully with basic loading")
+            print(f"   Model classes: {model.names if hasattr(model, 'names') else 'Not available'}")
+            
+        except Exception as e2:
+            print(f"⚠️  Fallback model loading failed: {str(e2)}")
+            print("   Detection features will not be available")
+            print("   Please check:")
+            print("   1. Model file integrity")
+            print("   2. Ultralytics YOLO version compatibility")
+            print("   3. Required dependencies (torch, torchvision, etc.)")
+            model = None
+
+# Store model in app config for health checks
+app.config['MODEL_LOADED'] = model is not None
 
 # Initialize database
 init_db()
@@ -1826,28 +1923,63 @@ def download_processed_video():
         print(f"Download processed video error: {str(e)}")
         return jsonify({'error': 'Failed to download processed video'}), 500
 
-if __name__ == '__main__':
-    # Create database tables
+def create_app():
+    # Initialize database
     try:
+        from database import init_db, engine, Base
+        print("🔧 Initializing database...")
         Base.metadata.create_all(bind=engine)
-        print("✅ Database tables created successfully")
+        init_db()
+        print("✅ Database initialized successfully")
     except Exception as e:
-        print(f"❌ Database error: {str(e)}")
+        print(f"❌ Database initialization error: {str(e)}")
+        import traceback
+        traceback.print_exc()
     
-    # Gunakan port 5000 secara default
-    port = int(os.environ.get('PORT', '5000'))
-    
-    print("Starting DrowsyGuard Backend Server...")
-    print(f"Database URL: {app.config.get('DATABASE_URL')}")
+    # Print configuration
+    print("\n=== DrowsyGuard Backend Configuration ===")
+    print(f"Environment: {'Production' if 'DYNO' in os.environ else 'Development'}")
+    print(f"Database URL: {os.environ.get('DATABASE_URL', 'sqlite:///drowsyguard.db')}")
     print(f"Model Path: {app.config.get('MODEL_PATH')}")
     print(f"Alarm Sounds: {app.config.get('ALARM_SOUNDS_FOLDER')}")
-    print(f"Server will run on port: {port}")
     
-    # Debug: Print all registered routes
+    # Print registered routes
     print("\n=== REGISTERED ROUTES ===")
     for rule in app.url_map.iter_rules():
         print(f"{rule.methods} {rule.rule} -> {rule.endpoint}")
     print("========================\n")
+    
+    @app.route('/health')
+    def health_check():
+        """Health check endpoint"""
+        return jsonify({
+            'status': 'healthy',
+            'environment': 'production' if 'DYNO' in os.environ else 'development',
+            'database_connected': True,
+            'model_loaded': os.path.exists(app.config.get('MODEL_PATH', ''))
+        }), 200
+    
+    return app
+
+# For local development
+if __name__ == '__main__':
+    app = create_app()
+    port = int(os.environ.get('PORT', '5000'))
+    print(f"\n🚀 Starting DrowsyGuard Backend Server on port {port}...")
+    
+    # Check if model exists
+    model_path = app.config.get('MODEL_PATH')
+    if not os.path.exists(model_path):
+        print(f"⚠️  Warning: Model file not found at {model_path}")
+        print("    Detection features will not work without the model file!")
+    
+    # Create necessary directories
+    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    os.makedirs(app.config['ALARM_SOUNDS_FOLDER'], exist_ok=True)
+    
+    print("\n📡 Server is ready to accept connections!")
+    print(f"   - API Base URL: http://localhost:{port}/api")
+    print(f"   - Health Check: http://localhost:{port}/health\n")
     
     # Run the app
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
@@ -1868,6 +2000,6 @@ def log_response(response):
     print(f"[RESPONSE] {response.status_code} for {request.method} {request.path}")
     return response
 
-# if __name__ == '__main__':
-#     # Run without debug mode to prevent reloader issues with YOLO model
-#     app.run(debug=False, use_reloader=False)
+if __name__ == '__main__':
+    # Run without debug mode to prevent reloader issues with YOLO model
+    app.run(debug=False, use_reloader=False)
